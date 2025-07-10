@@ -18,7 +18,7 @@ const BASE_URL = "https://eodhd.com/api";
       const res = await fetch(url);
       const data = await res.json();
       data.forEach((entry) => {
-        allSymbols.append({
+        allSymbols.push({
           symbol: entry.Code,
           name: entry.Name,
           region: entry.Country || code
@@ -27,7 +27,7 @@ const BASE_URL = "https://eodhd.com/api";
     } catch (err) {
       console.error(`❌ Fehler bei ${code}:`, err.message);
     }
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await new Promise((resolve) => setTimeout(resolve, 1500)); // API-Limit einhalten
   }
 
   fs.writeFileSync("symbols_all.json", JSON.stringify(allSymbols, null, 2));
