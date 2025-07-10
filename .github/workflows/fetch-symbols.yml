@@ -1,0 +1,32 @@
+name: Hole alle Symbols
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Installiere Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Installiere Abhängigkeiten
+        run: npm install
+
+      - name: Starte Symbol-Download
+        env:
+          EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
+        run: npm start
+
+      - name: Commit symbols_all.json
+        run: |
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+          git add symbols_all.json
+          git commit -m "🔄 Update symbols_all.json" || echo "Keine Änderungen"
+          git push
