@@ -405,8 +405,32 @@
 // Globale Variablen
 let portfolio = [];
 let regionChart, sectorChart;
+let stocksData = []; // Cache für alle Aktiendaten
+let stocksLoaded = false;
 
-// Hauptsuchfunktion - direkt API-Suche
+// Aktiendaten beim ersten Laden der Seite laden
+async function loadStocksData() {
+  if (stocksLoaded) return;
+  
+  try {
+    console.log('Lade Aktiendaten...');
+    const response = await fetch('./symbols_all.json');
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: Datei nicht gefunden`);
+    }
+    
+    stocksData = await response.json();
+    stocksLoaded = true;
+    console.log(`✅ ${stocksData.length} Aktien geladen`);
+    
+  } catch (error) {
+    console.error('Fehler beim Laden der Aktiendaten:', error);
+    throw new Error('Aktiendaten konnten nicht geladen werden');
+  }
+}
+
+// Hauptsuchfunktion - durchsucht lokale JSON-Datei
 async function handleSearch() {
   const input = document.getElementById("searchInput").value.trim();
   const box = document.getElementById("searchResults");
@@ -424,30 +448,71 @@ async function handleSearch() {
 
   button.disabled = true;
   button.innerHTML = "🔄 Suche...";
-  box.innerHTML = '<div class="search-result loading"><p class="info">🔍 Durchsuche über 70.000 Weltaktien...</p></div>';
+  box.innerHTML = '<div class="search-result loading"><p class="info">🔍 Durchsuche Aktiendatenbank...</p></div>';
 
   try {
-    // Netlify Function aufrufen
-    const response = await fetch(`/.netlify/functions/stock-search?keywords=${encodeURIComponent(input)}`);
+    // Aktiendaten laden falls noch nicht geschehen
+    if (!stocksLoaded) {
+      await loadStocksData();
+    }
+
+    // Suche durchführen
+    const searchTerm = input.toLowerCase();
+    const matches = [];
     
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `HTTP ${response.status}`);
+    // Durch alle Aktien iterieren und nach Übereinstimmungen suchen
+    for (const stock of stocksData) {
+      const symbol = stock.symbol ? stock.symbol.toLowerCase() : '';
+      const name = stock.name ? stock.name.toLowerCase() : '';
+      
+      let matchScore = 0;
+      
+      // Exakte Symbol-Übereinstimmung = höchste Priorität
+      if (symbol === searchTerm) {
+        matchScore = 1.0;
+      }
+      // Symbol beginnt mit Suchterm
+      else if (symbol.startsWith(searchTerm)) {
+        matchScore = 0.9;
+      }
+      // Name beginnt mit Suchterm
+      else if (name.startsWith(searchTerm)) {
+        matchScore = 0.8;
+      }
+      // Symbol enthält Suchterm
+      else if (symbol.includes(searchTerm)) {
+        matchScore = 0.7;
+      }
+      // Name enthält Suchterm
+      else if (name.includes(searchTerm)) {
+        matchScore = 0.6;
+      }
+      
+      if (matchScore > 0) {
+        matches.push({
+          ...stock,
+          matchScore: matchScore
+        });
+      }
+      
+      // Stop bei zu vielen Treffern für bessere Performance
+      if (matches.length >= 50) break;
     }
     
-    const data = await response.json();
+    // Sortiere nach Match-Score (beste zuerst)
+    matches.sort((a, b) => b.matchScore - a.matchScore);
     
-    if (data.bestMatches && data.bestMatches.length > 0) {
-      displaySearchResults(data.bestMatches, input);
+    if (matches.length > 0) {
+      displaySearchResults(matches.slice(0, 10), input);
     } else {
       box.innerHTML = `
         <div class="search-result">
           <p class="error">❌ Keine Aktien für "${input}" gefunden.</p>
           <p class="info">Versuchen Sie:</p>
           <ul style="margin: 10px 0; padding-left: 20px;">
-            <li>Vollständigen Firmennamen (z.B. "Volkswagen")</li>
-            <li>Ticker-Symbol (z.B. "VOW.DE")</li>
-            <li>Englischen Namen (z.B. "Siemens")</li>
+            <li>Vollständigen Firmennamen (z.B. "Apple")</li>
+            <li>Ticker-Symbol (z.B. "AAPL")</li>
+            <li>Andere Schreibweise</li>
           </ul>
         </div>
       `;
@@ -455,19 +520,10 @@ async function handleSearch() {
   } catch (error) {
     console.error('Search error:', error);
     
-    let errorMessage = 'Unbekannter Fehler';
-    if (error.message.includes('Rate Limit')) {
-      errorMessage = 'API-Limit erreicht. Bitte warten Sie 1 Minute.';
-    } else if (error.message.includes('API Key not configured')) {
-      errorMessage = 'API-Key nicht konfiguriert. Bitte Environment Variables setzen.';
-    } else {
-      errorMessage = error.message;
-    }
-    
     box.innerHTML = `
       <div class="search-result">
-        <p class="error">❌ Fehler bei der Suche: ${errorMessage}</p>
-        <p class="info">Versuchen Sie es in einem Moment erneut.</p>
+        <p class="error">❌ Fehler bei der Suche: ${error.message}</p>
+        <p class="info">Bitte überprüfen Sie, ob die symbols_all.json Datei im richtigen Verzeichnis liegt.</p>
       </div>
     `;
   } finally {
@@ -483,20 +539,18 @@ function displaySearchResults(matches, query) {
     <div style="margin-bottom: 15px;">
       <p class="success">✅ ${matches.length} Treffer für "${query}" gefunden:</p>
     </div>
-  ` + matches.slice(0, 8).map(stock => {
-    const symbol = stock['1. symbol'];
-    const name = stock['2. name'];
-    const type = stock['3. type'];
-    const region = stock['4. region'];
-    const currency = stock['8. currency'];
-    const matchScore = parseFloat(stock['9. matchScore'] || 0);
+  ` + matches.map(stock => {
+    const symbol = stock.symbol || 'N/A';
+    const name = stock.name || 'Unbekannt';
+    const region = stock.region || 'Unbekannt';
+    const matchScore = stock.matchScore || 0;
     
     const flagEmoji = getCountryFlag(region);
     
     return `
       <div class="search-result">
         <strong>${symbol}</strong> - ${name}<br>
-        📊 ${type} | ${flagEmoji} ${region} | 💱 ${currency}<br>
+        📊 Stock | ${flagEmoji} ${region}<br>
         🎯 Match: ${(matchScore * 100).toFixed(0)}%
         <br><button onclick="addToPortfolio('${symbol}', '${name.replace(/'/g, "\\'")}', '${region}')">+ Hinzufügen</button>
       </div>
@@ -553,91 +607,74 @@ function getCountryFlag(region) {
 }
 
 // Portfolio-Funktionen
-async function addToPortfolio(symbol, name, region) {
+function addToPortfolio(symbol, name, region) {
   if (portfolio.some(stock => stock.symbol === symbol)) {
     alert("Diese Aktie ist bereits im Portfolio.");
     return;
   }
 
-  const box = document.getElementById("searchResults");
-  box.innerHTML = '<div class="search-result loading"><p class="info">🔄 Lade Aktiendetails...</p></div>';
-
-  try {
-    const response = await fetch(`/.netlify/functions/stock-quote?symbol=${encodeURIComponent(symbol)}`);
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `HTTP ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    const quote = data.quote['Global Quote'] || {};
-    const overview = data.overview || {};
-    
-    const price = parseFloat(quote['05. price']) || 0;
-    const changePercent = quote['10. change percent'] ? 
-      parseFloat(quote['10. change percent'].replace('%', '')) : 0;
-    
-    let marketCap = 1000;
-    if (overview.MarketCapitalization && overview.MarketCapitalization !== 'None') {
-      marketCap = parseInt(overview.MarketCapitalization) / 1000000;
-    }
-    
-    let sector = overview.Sector || 'Unbekannt';
-    if (sector === 'None' || sector === '') {
-      sector = overview.Industry || 'Unbekannt';
-    }
-    
-    portfolio.push({
-      symbol: symbol,
-      name: name,
-      price: price,
-      change: changePercent,
-      sector: sector,
-      region: region,
-      marketCap: marketCap
-    });
-
-    renderPortfolio();
-    
-    box.innerHTML = `
-      <div class="search-result">
-        <p class="success">✅ ${symbol} wurde erfolgreich hinzugefügt!</p>
-        <p class="info">💰 Aktueller Kurs: ${price.toFixed(2)} | 📈 ${changePercent.toFixed(2)}%</p>
-      </div>
-    `;
-    
-    document.getElementById("searchInput").value = "";
-    
-  } catch (error) {
-    console.error('Error adding stock:', error);
-    
-    let errorMessage = 'Unbekannter Fehler';
-    if (error.message.includes('Rate Limit')) {
-      errorMessage = 'API-Limit erreicht. Versuchen Sie es in 1 Minute erneut.';
-    } else {
-      errorMessage = error.message;
-    }
-    
-    box.innerHTML = `
-      <div class="search-result">
-        <p class="error">❌ Fehler beim Hinzufügen: ${errorMessage}</p>
-        <button onclick="addToPortfolio('${symbol}', '${name.replace(/'/g, "\\'")}', '${region}')">🔄 Erneut versuchen</button>
-      </div>
-    `;
+  // Da wir keine echten Kursdaten haben, simulieren wir sie
+  const simulatedPrice = Math.random() * 200 + 10; // Preis zwischen 10-210
+  const simulatedChange = (Math.random() - 0.5) * 10; // Änderung zwischen -5% und +5%
+  const simulatedMarketCap = Math.random() * 100000 + 1000; // MarketCap zwischen 1B und 100B
+  
+  // Sektor basierend auf Firmenname erraten (sehr einfache Logik)
+  let sector = 'Unbekannt';
+  const nameWords = name.toLowerCase();
+  
+  if (nameWords.includes('bank') || nameWords.includes('financial') || nameWords.includes('capital')) {
+    sector = 'Finanzdienstleistungen';
+  } else if (nameWords.includes('tech') || nameWords.includes('software') || nameWords.includes('digital')) {
+    sector = 'Technologie';
+  } else if (nameWords.includes('energy') || nameWords.includes('oil') || nameWords.includes('gas')) {
+    sector = 'Energie';
+  } else if (nameWords.includes('pharma') || nameWords.includes('health') || nameWords.includes('medical')) {
+    sector = 'Gesundheitswesen';
+  } else if (nameWords.includes('auto') || nameWords.includes('motor') || nameWords.includes('car')) {
+    sector = 'Automobilindustrie';
+  } else {
+    const sectors = ['Technologie', 'Finanzdienstleistungen', 'Gesundheitswesen', 'Energie', 'Industrie', 'Konsumgüter'];
+    sector = sectors[Math.floor(Math.random() * sectors.length)];
   }
+
+  portfolio.push({
+    symbol: symbol,
+    name: name,
+    price: simulatedPrice,
+    change: simulatedChange,
+    sector: sector,
+    region: region,
+    marketCap: simulatedMarketCap
+  });
+
+  renderPortfolio();
+  
+  const box = document.getElementById("searchResults");
+  box.innerHTML = `
+    <div class="search-result">
+      <p class="success">✅ ${symbol} wurde erfolgreich hinzugefügt!</p>
+      <p class="info">💰 Simulierter Kurs: ${simulatedPrice.toFixed(2)} | 📈 ${simulatedChange.toFixed(2)}%</p>
+      <p class="info">ℹ️ Da keine echte API verfügbar ist, werden Demo-Daten verwendet.</p>
+    </div>
+  `;
+  
+  document.getElementById("searchInput").value = "";
 }
 
 function refreshPortfolio() {
+  if (portfolio.length === 0) {
+    alert("Portfolio ist leer - nichts zu aktualisieren.");
+    return;
+  }
+  
   // Simuliere kleine Kursänderungen für Demo
   portfolio.forEach(stock => {
-    const randomChange = (Math.random() - 0.5) * 0.05; // ±2.5% Änderung
+    const randomChange = (Math.random() - 0.5) * 0.1; // ±5% Änderung
     stock.price = stock.price * (1 + randomChange);
     stock.change = randomChange * 100;
   });
   renderPortfolio();
-  alert("Portfolio wurde aktualisiert!");
+  alert("Portfolio wurde aktualisiert! (Demo-Daten)");
 }
 
 function removeFromPortfolio(symbol) {
@@ -711,7 +748,7 @@ function renderPortfolio() {
           📉 <span class="${changeClass}">${change > 0 ? '+' : ''}${change.toFixed(2)}%</span> | 
           🏭 ${stock.sector} | 
           🌍 ${flagEmoji} ${stock.region}<br>
-          🧮 MarketCap: ${stock.marketCap.toLocaleString()} Mio USD
+          🧮 MarketCap: ${(stock.marketCap / 1000).toFixed(1)}B USD (Demo)
         </div>
         <button onclick="removeFromPortfolio('${stock.symbol}')">Entfernen</button>
       </div>
@@ -814,6 +851,11 @@ document.getElementById('searchInput').addEventListener('keypress', function(e) 
 // Initialisierung
 document.addEventListener('DOMContentLoaded', function() {
   renderPortfolio();
+  
+  // Aktiendaten vorladen für bessere Performance
+  loadStocksData().catch(error => {
+    console.warn('Aktiendaten konnten nicht vorgeladen werden:', error.message);
+  });
 });
 </script>
 </body>
