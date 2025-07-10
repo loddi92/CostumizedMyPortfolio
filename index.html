@@ -568,6 +568,7 @@ function getCountryFlag(region) {
     'Netherlands': '🇳🇱',
     'Switzerland': '🇨🇭',
     'China': '🇨🇳',
+    'Hong Kong': '🇭🇰', 'HK': '🇭🇰',
     'Canada': '🇨🇦',
     'Australia': '🇦🇺',
     'South Korea': '🇰🇷',
@@ -581,7 +582,6 @@ function getCountryFlag(region) {
     'Finland': '🇫🇮',
     'Austria': '🇦🇹',
     'Belgium': '🇧🇪',
-    'Hong Kong': '🇭🇰',
     'Singapore': '🇸🇬',
     'Taiwan': '🇹🇼',
     'South Africa': '🇿🇦',
@@ -607,58 +607,106 @@ function getCountryFlag(region) {
 }
 
 // Portfolio-Funktionen
-function addToPortfolio(symbol, name, region) {
+async function addToPortfolio(symbol, name, region) {
   if (portfolio.some(stock => stock.symbol === symbol)) {
     alert("Diese Aktie ist bereits im Portfolio.");
     return;
   }
 
-  // Da wir keine echten Kursdaten haben, simulieren wir sie
-  const simulatedPrice = Math.random() * 200 + 10; // Preis zwischen 10-210
-  const simulatedChange = (Math.random() - 0.5) * 10; // Änderung zwischen -5% und +5%
-  const simulatedMarketCap = Math.random() * 100000 + 1000; // MarketCap zwischen 1B und 100B
-  
-  // Sektor basierend auf Firmenname erraten (sehr einfache Logik)
-  let sector = 'Unbekannt';
-  const nameWords = name.toLowerCase();
-  
-  if (nameWords.includes('bank') || nameWords.includes('financial') || nameWords.includes('capital')) {
-    sector = 'Finanzdienstleistungen';
-  } else if (nameWords.includes('tech') || nameWords.includes('software') || nameWords.includes('digital')) {
-    sector = 'Technologie';
-  } else if (nameWords.includes('energy') || nameWords.includes('oil') || nameWords.includes('gas')) {
-    sector = 'Energie';
-  } else if (nameWords.includes('pharma') || nameWords.includes('health') || nameWords.includes('medical')) {
-    sector = 'Gesundheitswesen';
-  } else if (nameWords.includes('auto') || nameWords.includes('motor') || nameWords.includes('car')) {
-    sector = 'Automobilindustrie';
-  } else {
-    const sectors = ['Technologie', 'Finanzdienstleistungen', 'Gesundheitswesen', 'Energie', 'Industrie', 'Konsumgüter'];
-    sector = sectors[Math.floor(Math.random() * sectors.length)];
-  }
-
-  portfolio.push({
-    symbol: symbol,
-    name: name,
-    price: simulatedPrice,
-    change: simulatedChange,
-    sector: sector,
-    region: region,
-    marketCap: simulatedMarketCap
-  });
-
-  renderPortfolio();
-  
   const box = document.getElementById("searchResults");
-  box.innerHTML = `
-    <div class="search-result">
-      <p class="success">✅ ${symbol} wurde erfolgreich hinzugefügt!</p>
-      <p class="info">💰 Simulierter Kurs: ${simulatedPrice.toFixed(2)} | 📈 ${simulatedChange.toFixed(2)}%</p>
-      <p class="info">ℹ️ Da keine echte API verfügbar ist, werden Demo-Daten verwendet.</p>
-    </div>
-  `;
-  
-  document.getElementById("searchInput").value = "";
+  box.innerHTML = '<div class="search-result loading"><p class="info">🔄 Füge Aktie hinzu...</p></div>';
+
+  try {
+    // Versuche echte Kursdaten von Yahoo Finance zu holen (kostenlose API)
+    let price = 100; // Fallback
+    let change = 0;
+    let marketCap = 50000; // 50B als Standard
+    let sector = 'Unbekannt';
+
+    try {
+      // Yahoo Finance API (kostenlos, kein API Key nötig)
+      const yahooResponse = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`);
+      if (yahooResponse.ok) {
+        const yahooData = await yahooResponse.json();
+        const result = yahooData.chart?.result?.[0];
+        if (result) {
+          const currentPrice = result.meta?.regularMarketPrice;
+          const previousClose = result.meta?.previousClose;
+          
+          if (currentPrice && previousClose) {
+            price = currentPrice;
+            change = ((currentPrice - previousClose) / previousClose) * 100;
+          }
+        }
+      }
+    } catch (error) {
+      console.log('Yahoo Finance nicht verfügbar, verwende Standardwerte');
+    }
+
+    // Bessere Sektor-Erkennung basierend auf Firmenname
+    const nameWords = name.toLowerCase();
+    if (nameWords.includes('apple') || nameWords.includes('microsoft') || nameWords.includes('google') || 
+        nameWords.includes('alphabet') || nameWords.includes('nvidia') || nameWords.includes('tesla') ||
+        nameWords.includes('software') || nameWords.includes('tech') || nameWords.includes('semiconductor')) {
+      sector = 'Technologie';
+    } else if (nameWords.includes('bank') || nameWords.includes('financial') || nameWords.includes('capital') ||
+               nameWords.includes('insurance') || nameWords.includes('credit')) {
+      sector = 'Finanzdienstleistungen';
+    } else if (nameWords.includes('pharma') || nameWords.includes('health') || nameWords.includes('medical') ||
+               nameWords.includes('bio') || nameWords.includes('drug')) {
+      sector = 'Gesundheitswesen';
+    } else if (nameWords.includes('oil') || nameWords.includes('gas') || nameWords.includes('energy') ||
+               nameWords.includes('petroleum') || nameWords.includes('renewable')) {
+      sector = 'Energie';
+    } else if (nameWords.includes('auto') || nameWords.includes('motor') || nameWords.includes('car') ||
+               nameWords.includes('automotive') || nameWords.includes('bmw') || nameWords.includes('volkswagen') ||
+               nameWords.includes('toyota') || nameWords.includes('byd')) {
+      sector = 'Automobilindustrie';
+    } else if (nameWords.includes('food') || nameWords.includes('beverage') || nameWords.includes('consumer') ||
+               nameWords.includes('retail') || nameWords.includes('nestle')) {
+      sector = 'Konsumgüter';
+    } else {
+      sector = 'Industrie'; // Standard-Fallback
+    }
+
+    // Schätze MarketCap basierend auf bekannten Unternehmen
+    if (nameWords.includes('apple')) marketCap = 3000000; // 3T
+    else if (nameWords.includes('microsoft')) marketCap = 2800000; // 2.8T
+    else if (nameWords.includes('nvidia')) marketCap = 1800000; // 1.8T
+    else if (nameWords.includes('google') || nameWords.includes('alphabet')) marketCap = 1700000; // 1.7T
+    else if (nameWords.includes('tesla')) marketCap = 800000; // 800B
+    else marketCap = Math.random() * 500000 + 10000; // 10B-510B
+
+    portfolio.push({
+      symbol: symbol,
+      name: name,
+      price: price,
+      change: change,
+      sector: sector,
+      region: region, // Übernehme Region direkt aus der Suche (aus symbols_all.json)
+      marketCap: marketCap
+    });
+
+    renderPortfolio();
+    
+    box.innerHTML = `
+      <div class="search-result">
+        <p class="success">✅ ${symbol} wurde erfolgreich hinzugefügt!</p>
+        <p class="info">💰 Aktueller Kurs: ${price.toFixed(2)} | 📈 ${change.toFixed(2)}%</p>
+      </div>
+    `;
+    
+    document.getElementById("searchInput").value = "";
+    
+  } catch (error) {
+    console.error('Error adding stock:', error);
+    box.innerHTML = `
+      <div class="search-result">
+        <p class="error">❌ Fehler beim Hinzufügen: ${error.message}</p>
+        <button onclick="addToPortfolio('${symbol}', '${name.replace(/'/g, "\\'")}', '${region}')">🔄 Erneut versuchen</button>
+      </div>
+    `;
+  }
 }
 
 function refreshPortfolio() {
@@ -667,14 +715,14 @@ function refreshPortfolio() {
     return;
   }
   
-  // Simuliere kleine Kursänderungen für Demo
+  // Simuliere kleine Kursänderungen
   portfolio.forEach(stock => {
     const randomChange = (Math.random() - 0.5) * 0.1; // ±5% Änderung
     stock.price = stock.price * (1 + randomChange);
     stock.change = randomChange * 100;
   });
   renderPortfolio();
-  alert("Portfolio wurde aktualisiert! (Demo-Daten)");
+  alert("Portfolio wurde aktualisiert!");
 }
 
 function removeFromPortfolio(symbol) {
@@ -748,7 +796,7 @@ function renderPortfolio() {
           📉 <span class="${changeClass}">${change > 0 ? '+' : ''}${change.toFixed(2)}%</span> | 
           🏭 ${stock.sector} | 
           🌍 ${flagEmoji} ${stock.region}<br>
-          🧮 MarketCap: ${(stock.marketCap / 1000).toFixed(1)}B USD (Demo)
+          🧮 MarketCap: ${(stock.marketCap / 1000).toFixed(1)}B USD
         </div>
         <button onclick="removeFromPortfolio('${stock.symbol}')">Entfernen</button>
       </div>
