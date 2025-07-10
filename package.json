@@ -1,6 +1,11 @@
 {
-  "name": "stock-app",
+  "name": "fetch-symbols",
   "version": "1.0.0",
+  "description": "Lade alle Aktiensymbole weltweit von EODHD",
+  "main": "fetch_all_symbols.js",
+  "scripts": {
+    "start": "node fetch_all_symbols.js"
+  },
   "dependencies": {
     "node-fetch": "^2.6.7"
   }
